@@ -7,6 +7,7 @@ mounts static files, and runs startup initialisation (DB creation
 
 
 from fastapi import FastAPI, Request
+import os
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -41,10 +42,13 @@ def _template_context(request: Request) -> dict:
 
 @app.on_event("startup")
 async def startup() -> None:
-    """Initialise the database and ensure an admin account exists."""
+    """Initialise the database, ensure an admin account exists, and seed a
+    small sample catalog on first boot so the demo is instantly shoppable."""
     init_db()
 
     from src.database import get_session_cm
+    from src.models import Book
+    from src.books import create_book
 
     with get_session_cm() as db:
         admin = db.query(User).filter(User.username == "admin").first()
@@ -55,6 +59,23 @@ async def startup() -> None:
                 password="admin",
                 role="admin",
             )
+        if os.getenv("DATABASE_URL") is None and db.query(Book).count() == 0:
+            SAMPLE_BOOKS = [
+                {"isbn": "9789175037187", "title": "Broderna Lejonhjarta",
+                 "author": "Astrid Lindgren", "publisher": "Raben Sjogren", "year": 1973,
+                 "hcf_category": "hcf"},
+                {"isbn": "9789100117481", "title": "Den allvarsamma leken",
+                 "author": "Hjalmar Soderberg", "publisher": "Albert Bonniers", "year": 1912,
+                 "hcf_category": "adult"},
+                {"isbn": "9780141439518", "title": "Pride and Prejudice",
+                 "author": "Jane Austen", "publisher": "Penguin", "year": 1813,
+                 "hcf_category": "adult"},
+            ]
+            for b in SAMPLE_BOOKS:
+                try:
+                    create_book(db, **b)
+                except Exception:
+                    db.rollback()
 
 
 # ---------------------------------------------------------------------------
