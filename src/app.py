@@ -282,6 +282,12 @@ async def book_detail_page(
                 "created_at": orm_book.created_at,
             }
 
+    if not book:
+        return HTMLResponse(
+            "<h1>404 — Boken hittades inte</h1><p><a href=\"/books\">Tillbaka till katalogen</a></p>",
+            status_code=404,
+        )
+
     # Check active loan
     has_active_loan = False
     with get_session_cm() as db:
