@@ -1,0 +1,11 @@
+{
+  "_comment": [
+    "vm106 hosting config for svarkor-ai/bibliotek -- MC#2317. Strict JSON (no yaml lib; comments only here).",
+    "FastAPI (src/app.py:app). exec=server.py binds 0.0.0.0:8140. requirements.txt pins the deps that were ranged in pyproject."
+  ],
+  "name": "bibliotek",
+  "type": "service",
+  "root": "apps/bibliotek",
+  "exec": "server.py",
+  "port": 8140
+}
