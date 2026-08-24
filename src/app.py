@@ -196,11 +196,13 @@ async def catalog_page(
                 )
             )
 
-        # Category filter
+        # Category filter — dropdown values are the DB's real HCF codes
+        # (hcf/hcg/hcb/adult), so filter Book.hcf_category directly. Validate
+        # against the canonical vocabulary to ignore any unknown value.
         if category:
-            cat_map = {"barn": "barn", "unga": "unga", "vuxen": "vuxen"}
-            if category in cat_map:
-                query = query.filter(Book.hcf_category == cat_map[category])
+            from src.models import VALID_HCF_CATEGORIES
+            if category in VALID_HCF_CATEGORIES:
+                query = query.filter(Book.hcf_category == category)
 
         # Language filter
         if language:

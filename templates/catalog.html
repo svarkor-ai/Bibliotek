@@ -20,9 +20,9 @@
 <div class="filter-bar">
   <select onchange="applyFilter('category', this.value)" aria-label="Kategori">
     <option value="">Alla kategorier</option>
-    <option value="barn" {% if category=='barn' %}selected{% endif %}>🧒 Barn</option>
-    <option value="unga" {% if category=='unga' %}selected{% endif %}>👦 Unga</option>
-    <option value="vuxen" {% if category=='vuxen' %}selected{% endif %}>🧑 Vuxen</option>
+    <option value="hcf" {% if category=='hcf' %}selected{% endif %}>🧒 Barn (HCF)</option>
+    <option value="hcg" {% if category=='hcg' %}selected{% endif %}>👦 Unga (HCG)</option>
+    <option value="adult" {% if category=='adult' %}selected{% endif %}>🧑 Vuxen (Adult)</option>
   </select>
   <select onchange="applyFilter('language', this.value)" aria-label="Språk">
     <option value="">Alla språk</option>
