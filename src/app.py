@@ -42,13 +42,16 @@ def _template_context(request: Request) -> dict:
 
 @app.on_event("startup")
 async def startup() -> None:
-    """Initialise the database, ensure an admin account exists, and seed a
-    small sample catalog on first boot so the demo is instantly shoppable."""
+    """Initialise the database, ensure an admin account exists, and populate
+    the catalog on first boot: the bundled bulk import if data/bulk_books.jsonl.gz
+    ships with this checkout (production), else a tiny 3-book demo seed so a
+    bare dev checkout is still instantly shoppable (see bulk_import.py)."""
     init_db()
 
     from src.database import get_session_cm
     from src.models import Book
     from src.books import create_book
+    from src.bulk_import import run_bulk_import_if_needed
 
     with get_session_cm() as db:
         admin = db.query(User).filter(User.username == "admin").first()
@@ -59,23 +62,34 @@ async def startup() -> None:
                 password="admin",
                 role="admin",
             )
-        if os.getenv("DATABASE_URL") is None and db.query(Book).count() == 0:
-            SAMPLE_BOOKS = [
-                {"isbn": "9789175037187", "title": "Broderna Lejonhjarta",
-                 "author": "Astrid Lindgren", "publisher": "Raben Sjogren", "year": 1973,
-                 "hcf_category": "hcf"},
-                {"isbn": "9789100117481", "title": "Den allvarsamma leken",
-                 "author": "Hjalmar Soderberg", "publisher": "Albert Bonniers", "year": 1912,
-                 "hcf_category": "adult"},
-                {"isbn": "9780141439518", "title": "Pride and Prejudice",
-                 "author": "Jane Austen", "publisher": "Penguin", "year": 1813,
-                 "hcf_category": "adult"},
-            ]
-            for b in SAMPLE_BOOKS:
-                try:
-                    create_book(db, **b)
-                except Exception:
-                    db.rollback()
+
+    # Bulk catalog import (idempotent, versioned — see bulk_import.py). Runs
+    # regardless of DATABASE_URL: it is gated on its own version marker, not
+    # on dev-vs-prod detection, so it can never again silently fail to apply
+    # in production the way the old "DATABASE_URL is None" gate on the demo
+    # seed did (that gate only ever controlled the 3-book DEMO, but nothing
+    # populated the real catalog in production at all).
+    has_bulk_artifact = run_bulk_import_if_needed()
+
+    if not has_bulk_artifact:
+        with get_session_cm() as db:
+            if db.query(Book).count() == 0:
+                SAMPLE_BOOKS = [
+                    {"isbn": "9789175037187", "title": "Broderna Lejonhjarta",
+                     "author": "Astrid Lindgren", "publisher": "Raben Sjogren", "year": 1973,
+                     "hcf_category": "hcf"},
+                    {"isbn": "9789100117481", "title": "Den allvarsamma leken",
+                     "author": "Hjalmar Soderberg", "publisher": "Albert Bonniers", "year": 1912,
+                     "hcf_category": "adult"},
+                    {"isbn": "9780141439518", "title": "Pride and Prejudice",
+                     "author": "Jane Austen", "publisher": "Penguin", "year": 1813,
+                     "hcf_category": "adult"},
+                ]
+                for b in SAMPLE_BOOKS:
+                    try:
+                        create_book(db, **b)
+                    except Exception:
+                        db.rollback()
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +99,14 @@ async def startup() -> None:
 def _page_info(page: int, total: int, per_page: int) -> dict:
     pages = max(1, (total + per_page - 1) // per_page)
     return {"items": [], "page": page, "pages": pages, "total": total}
+
+
+def _format_book_count(n: int) -> str:
+    """Swedish thousands-separated count for display (e.g. 128493 -> '128 493').
+
+    stdlib-only (no locale dependency, which would need sv_SE installed).
+    """
+    return f"{n:,}".replace(",", " ")
 
 
 def _get_current_user_from_request(request: Request):
@@ -122,6 +144,10 @@ class CurrentUserMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(CurrentUserMiddleware)
 
+# MC 2034.2 — public demo: per-visitor rate limit on mutating requests.
+from src.demo_guard import DemoWriteGuard
+app.add_middleware(DemoWriteGuard)
+
 
 # ---------------------------------------------------------------------------
 # Home page
@@ -136,6 +162,13 @@ async def home(request: Request) -> HTMLResponse:
     recent = []
     categories = []
     with get_session_cm() as db:
+        # Real catalog size — reuses the exact same .count() idiom as
+        # catalog_page()'s `total = query.count()` below. This MUST stay the
+        # single source of truth for any book-count claim shown to users
+        # (see 2026-08-17 fix: index.html used to hardcode "100 000" as
+        # marketing copy while the db held 3 rows).
+        book_count = db.query(Book).count()
+
         for b in db.query(Book).order_by(
             Book.id.desc()
         ).limit(12).all():
@@ -160,7 +193,12 @@ async def home(request: Request) -> HTMLResponse:
 
     return templates.TemplateResponse(
         request=request, name="index.html",
-        context={**_template_context(request), "recent_books": recent, "popular_categories": categories},
+        context={
+            **_template_context(request),
+            "recent_books": recent,
+            "popular_categories": categories,
+            "book_count": _format_book_count(book_count),
+        },
     )
 
 

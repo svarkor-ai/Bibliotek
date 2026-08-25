@@ -17,6 +17,32 @@ from src.models import Base
 _engine = None  # lazily created
 
 
+def resolve_db_path() -> Path:
+    """Resolve DATABASE_URL to the on-disk sqlite file Path.
+
+    Extracted from get_engine() 2026-08-17 (MC 1932.2) so anything that needs
+    to know "where is the db file" — e.g. the first-boot bulk importer in
+    bulk_import.py — reuses this SAME resolution instead of a second, and
+    potentially drifting, copy of the logic. Behaviour is unchanged.
+    """
+    if not DATABASE_URL.startswith("sqlite"):
+        raise RuntimeError(
+            f"Unsupported database URL scheme: {DATABASE_URL!r}. "
+            "Bibliotek requires SQLite."
+        )
+
+    # Extract path from sqlite:///./bibliotek.db → ./bibliotek.db
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    # Resolve relative paths against the project root
+    db_file = Path(db_path)
+    if not db_file.is_absolute():
+        db_file = Path(__file__).resolve().parent.parent / db_file
+
+    # Ensure parent directory exists
+    db_file.parent.mkdir(parents=True, exist_ok=True)
+    return db_file
+
+
 def get_engine() -> "Engine":
     """Return a shared SQLAlchemy engine (SQLite with WAL mode).
 
@@ -25,21 +51,8 @@ def get_engine() -> "Engine":
     """
     global _engine
     if _engine is None:
-        if not DATABASE_URL.startswith("sqlite"):
-            raise RuntimeError(
-                f"Unsupported database URL scheme: {DATABASE_URL!r}. "
-                "Bibliotek requires SQLite."
-            )
-
-        # Extract path from sqlite:///./bibliotek.db → ./bibliotek.db
+        resolve_db_path()  # side effect: validates scheme + creates parent dir
         db_path = DATABASE_URL.replace("sqlite:///", "")
-        # Resolve relative paths against the project root
-        db_file = Path(db_path)
-        if not db_file.is_absolute():
-            db_file = Path(__file__).resolve().parent.parent / db_file
-
-        # Ensure parent directory exists
-        db_file.parent.mkdir(parents=True, exist_ok=True)
 
         connect_args = {}
         if db_path.startswith(":memory:"):

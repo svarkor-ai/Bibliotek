@@ -3,8 +3,8 @@
 
 {% block content %}
 <section class="hero">
-  <h1>Utforska 100 000 böcker</h1>
-  <p>Sök bland 100 000 svenska böcker — allt i en och samma katalog.</p>
+  <h1>Utforska {{ book_count }} böcker</h1>
+  <p>Sök bland {{ book_count }} böcker — allt i en och samma katalog.</p>
   <form action="/catalog" method="get" style="max-width:500px; margin:1.5rem auto 0">
     <div class="search-bar">
       <input type="text" name="q" placeholder="Sök titel, författare..." autofocus>
