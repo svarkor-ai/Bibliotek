@@ -32,22 +32,16 @@
     </option>
     {% endfor %}
   </select>
-  <select onchange="applyFilter('sab', this.value)" aria-label="SAB-signum">
-    <option value="">Alla SAB-signum</option>
-    {% for s in available_sab %}
-    <option value="{{ s }}" {% if sab==s %}selected{% endif %}>
-      {{ s }}
-    </option>
-    {% endfor %}
-  </select>
-  <select onchange="applyFilter('dewey', this.value)" aria-label="DDC-nummer">
-    <option value="">Alla DDC-nummer</option>
-    {% for d in available_dewey %}
-    <option value="{{ d }}" {% if dewey==d %}selected{% endif %}>
-      {{ d }}
-    </option>
-    {% endfor %}
-  </select>
+  {# MC 2339.7 — the SAB-signum and DDC-nummer dropdowns lived here and were REMOVED.
+     They were not broken code: `catalog_page` built them from DISTINCT Book.sab_signum /
+     Book.dewey_number and the catalogue simply carries neither. Measured on the live store
+     (/var/lib/vm106-app-bibliotek/bibliotek.db, 115 363 rows): sab_signum and dewey_number
+     are NULL on every single row, and the seed file data/bulk_books.jsonl.gz ships both keys
+     empty on all 115 360 records. So both selects rendered with no selectable value and
+     ?sab= / ?dewey= returned "0 böcker" for anything — two dead controls on a public page.
+     Populating them is impossible without a data source that carries the classifications.
+     If one ever lands, restore the two <select> blocks, the two DISTINCT queries in
+     catalog_page and the sab/dewey query params together — they only work as a set. #}
 </div>
 
 <!-- Bokgalleri -->
@@ -76,7 +70,7 @@
 
 <!-- Paginering -->
 <div style="display:flex;justify-content:center;align-items:center;gap:1rem;margin-top:2rem;flex-wrap:wrap">
-   <a href="?page={{ page - 1 }}{% if q %}&q={{ q }}{% endif %}{% if category %}&category={{ category }}{% endif %}{% if language %}&language={{ language }}{% endif %}{% if sab %}&sab={{ sab }}{% endif %}{% if dewey %}&dewey={{ dewey }}{% endif %}"
+   <a href="?page={{ page - 1 }}{% if q %}&q={{ q }}{% endif %}{% if category %}&category={{ category }}{% endif %}{% if language %}&language={{ language }}{% endif %}"
      class="btn btn-secondary"
      {% if page <= 1 %}style="opacity:.4;pointer-events:none"{% endif %}>← Föregående</a>
 
@@ -84,7 +78,7 @@
     Sida {{ page }} av {{ pages }}
   </span>
 
-  <a href="?page={{ page + 1 }}{% if q %}&q={{ q }}{% endif %}{% if category %}&category={{ category }}{% endif %}{% if language %}&language={{ language }}{% endif %}{% if sab %}&sab={{ sab }}{% endif %}{% if dewey %}&dewey={{ dewey }}{% endif %}"
+  <a href="?page={{ page + 1 }}{% if q %}&q={{ q }}{% endif %}{% if category %}&category={{ category }}{% endif %}{% if language %}&language={{ language }}{% endif %}"
      class="btn btn-primary"
      {% if page >= pages %}style="opacity:.4;pointer-events:none"{% endif %}>Nästa →</a>
 </div>

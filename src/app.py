@@ -212,8 +212,6 @@ async def catalog_page(
     q: str = "",
     category: str = "",
     language: str = "",
-    sab: str = "",
-    dewey: str = "",
     page: int = 1,
     per_page: int = 48,
 ) -> HTMLResponse:
@@ -246,13 +244,12 @@ async def catalog_page(
         if language:
             query = query.filter(Book.languages == language.lower())
 
-        # SAB filter
-        if sab:
-            query = query.filter(Book.sab_signum == sab)
-
-        # Dewey filter
-        if dewey:
-            query = query.filter(Book.dewey_number == dewey)
+        # MC 2339.7: the ?sab= / ?dewey= filters were removed with their dropdowns.
+        # Book.sab_signum and Book.dewey_number are NULL on all 115 363 catalogue rows
+        # (and empty on all 115 360 records of data/bulk_books.jsonl.gz), so those two
+        # filters could only ever return an empty result set. The columns are kept --
+        # book_detail still renders them if a row ever carries one -- but a query
+        # parameter that can only produce "0 böcker" is not a filter, it is a trap.
 
         total = query.count()
         pages = max(1, (total + per_page - 1) // per_page)
@@ -286,13 +283,9 @@ async def catalog_page(
         all_langs = db.query(Book.languages).distinct().all()
         available_languages = [row[0] for row in all_langs if row[0]]
 
-        # Available SAB classes for dropdown
-        sab_classes = db.query(Book.sab_signum).distinct().order_by(Book.sab_signum).all()
-        available_sab = [row[0] for row in sab_classes if row[0]]
-
-        # Available Dewey numbers for dropdown
-        dewey_numbers = db.query(Book.dewey_number).distinct().order_by(Book.dewey_number).all()
-        available_dewey = [row[0] for row in dewey_numbers if row[0]]
+        # The two DISTINCT scans that fed the SAB and DDC dropdowns used to run here on
+        # every catalogue page view. Both returned [] on all 115 363 rows -- see the note
+        # in templates/catalog.html. Removed with the controls they populated.
 
     return templates.TemplateResponse(
         request=request, name="catalog.html",
@@ -301,11 +294,7 @@ async def catalog_page(
             "q": q or "",
             "category": category or "",
             "language": language or "",
-            "sab": sab or "",
-            "dewey": dewey or "",
             "available_languages": sorted(available_languages),
-            "available_sab": available_sab,
-            "available_dewey": available_dewey,
         },
     )
 
