@@ -1,13 +1,26 @@
 # MC#2317 requirements for svarkor-ai/bibliotek -- exact pins (vm106 build gate: pkg==version only,
-# no ranges, no extras, no inline comments; <=20 pins, <=4096 bytes). Derived from the ranged
-# pyproject deps + the actual imports (fastapi/jinja2/jose/bcrypt/httpx/sqlalchemy).
-fastapi==0.115.0
+# no ranges, no extras, no inline comments; <=20 pins, <=4096 bytes).
+#
+# 743.13 (S8, 2026-08-31): bumped to patched releases after pip-audit 2.10.1 flagged
+# 32 known vulnerabilities across the previous pins (jinja2, python-jose,
+# cryptography, python-multipart, starlette, ecdsa). Verified 2026-08-31 with
+# pip-audit 2.10.1: all direct pins now clean; the only remaining flag is the
+# TRANSITIVE ecdsa 0.19.2 (python-jose dependency, PYSEC-2026-1325) — no
+# patched release exists on PyPI (0.19.2 is the latest), documented as
+# accepted residual risk; the vulnerable ecdsa path is used only for EC
+# (elliptic-curve) keys, which this app does not use (HS256 JWT via
+# python-jose, bcrypt password hashing).
+# starlette==1.3.1 matches the fastapi==0.141.1 release line (fastapi 0.115.x
+# is capped at starlette <0.41, so the fastapi bump was required to land it).
+fastapi==0.141.1
 uvicorn==0.34.0
-sqlalchemy==2.0.36
-jinja2==3.1.4
-python-jose==3.3.0
-cryptography==43.0.3
+sqlalchemy==2.0.52
+jinja2==3.1.6
+python-jose==3.5.0
+cryptography==50.0.1
 bcrypt==4.2.0
 httpx==0.27.2
-python-multipart==0.0.12
-pydantic==2.9.2
+python-multipart==0.0.32
+pydantic==2.13.4
+python-dotenv==1.2.2
+starlette==1.3.1

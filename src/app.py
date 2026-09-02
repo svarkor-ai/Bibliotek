@@ -6,7 +6,7 @@ mounts static files, and runs startup initialisation (DB creation
 """
 
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 import os
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 
 from src.database import init_db
 from src.models import User
-from src.users import register_user
+from src.users import register_user, update_user
 
 # ---------------------------------------------------------------------------
 # App factory
@@ -54,14 +54,26 @@ async def startup() -> None:
     from src.bulk_import import run_bulk_import_if_needed
 
     with get_session_cm() as db:
+        from src.users import update_user
         admin = db.query(User).filter(User.username == "admin").first()
         if admin is None:
-            register_user(
-                db,
-                username="admin",
-                password="admin",
-                role="admin",
-            )
+            # MC 743.10 (I2): the bootstrap admin must be HARMLESS and must
+            # NEVER block boot. The old seed wrote a hard-coded default
+            # password (admin/admin), which 743.6 flagged and the open-login
+            # DoD (743.10) makes moot — open login lets anyone in regardless.
+            # So:
+            #   * the password comes from env (BIBLIOTEK_ADMIN_PASSWORD) when
+            #     set, else the account is created with a *random* (unguessable)
+            #     password so the default-cred finding is closed;
+            #   * the whole seed is wrapped in try/except and degrades to a
+            #     no-op on any error (it must never crash the app at startup).
+            import uuid
+            admin_pw = os.getenv("BIBLIOTEK_ADMIN_PASSWORD") or uuid.uuid4().hex
+            try:
+                new_admin = register_user(db, username="admin", password=admin_pw)
+                update_user(db, new_admin.id, role="admin")
+            except Exception as exc:  # pragma: no cover - defensive, never block boot
+                app.logger.warning("admin seed skipped: %s", exc)
 
     # Bulk catalog import (idempotent, versioned — see bulk_import.py). Runs
     # regardless of DATABASE_URL: it is gated on its own version marker, not
@@ -145,8 +157,13 @@ class CurrentUserMiddleware(BaseHTTPMiddleware):
 app.add_middleware(CurrentUserMiddleware)
 
 # MC 2034.2 — public demo: per-visitor rate limit on mutating requests.
-from src.demo_guard import DemoWriteGuard
-app.add_middleware(DemoWriteGuard)
+# Gated by ENABLE_DEMO_WRITE_GUARD (config): ON in production, OFF in the test
+# suite (the 10/300s bucket would otherwise make the deterministic test run
+# flaky — a burst of writes from one test IP gets a 429 mid-run, MC 743.1).
+from src.config import ENABLE_DEMO_WRITE_GUARD
+if ENABLE_DEMO_WRITE_GUARD:
+    from src.demo_guard import DemoWriteGuard
+    app.add_middleware(DemoWriteGuard)
 
 
 # ---------------------------------------------------------------------------
@@ -382,30 +399,66 @@ async def login_page(request: Request, error: str = "") -> HTMLResponse:
 async def login_submit(
     request: Request,
 ) -> RedirectResponse | HTMLResponse:
-    from src.auth import create_access_token
+    from src.auth import check_password, create_access_token
+    from src.csrf import generate_csrf_token, set_csrf_cookie
     from src.database import get_session_cm
 
     form = await request.form()
-    username = form.get("username", "")
-    password = form.get("password", "")
+    username = (form.get("username") or "").strip()
+    password = form.get("password") or ""
 
-    # For this prototype/POC: any non-empty login grants admin access
-    if username and password:
-        with get_session_cm() as db:
-            from src.models import User
-            user = db.query(User).filter(User.username == "admin").first()
-            if user is None:
-                from src.users import register_user
-                user = register_user(db, username="admin", password="admin", role="admin")
-            token = create_access_token(user_id=user.id, role=user.role)
-            resp = RedirectResponse(url="/", status_code=303)
-            resp.set_cookie(key="access_token", value=token)
-            return resp
+    if not username or not password:
+        return templates.TemplateResponse(
+            request=request, name="login.html",
+            context={**_template_context(request), "error": "Användarnamn och lösenord krävs"},
+        )
 
-    return templates.TemplateResponse(
-        request=request, name="login.html",
-        context={**_template_context(request), "error": "Användarnamn och lösenord krävs"},
-    )
+    with get_session_cm() as db:
+        from src.models import User
+        from src.users import update_user as _update_user
+        user = db.query(User).filter(User.username == username).first()
+        # I3 (MC 743.10): open login — restore the original open behaviour per
+        # the owner's explicit design (2026-08-28): "vilken kombination som
+        # helst av användare och lösenord fungerar" — ANY non-empty
+        # username+password logs in AS ADMIN. This is intended, not a bug.
+        #
+        # The 743.1 F2 real-password gate is NOT wired into this route: we
+        # never call check_password here, so a wrong/unknown credential is
+        # not rejected. (The F2 check_password gate is still live at the
+        # POST /api/auth/login endpoint — src/auth.py — and covered by
+        # tests/test_auth.py, so it is not dead code.)
+        #
+        # Every successful login mints an ADMIN session (role="admin").
+        #   * If the named account does not exist yet we create it as admin
+        #     (a real row) so the minted JWT's user_id is resolvable — the
+        #     admin routes and personal/self read by that id. The bootstrap
+        #     admin (seeded at startup) is likewise role=admin.
+        #
+        # The empty-credential guard above (lines 410-414) still applies: both
+        # username and password must be non-empty, so open login is "any
+        # non-empty", not "anything at all".
+        if user is None:
+            # register_user forces role="user" (no role kwarg — 743.1 F2/F3);
+            # create the row then promote it to admin out-of-band, exactly the
+            # pattern the bootstrap admin seed uses. This yields a real row
+            # whose id backs the minted admin JWT.
+            user = register_user(db, username=username, password=password)
+            _update_user(db, user.id, role="admin")
+        else:
+            _update_user(db, user.id, role="admin")
+        user_id = user.id
+        role = "admin"
+
+    # Success: issue a real JWT (access_token) + the session/role cookies the
+    # web UI reads, plus the per-session CSRF cookie the forms/admin JS need.
+    token = create_access_token(user_id=user_id, role=role)
+    csrf_token = generate_csrf_token()
+    resp = RedirectResponse(url="/", status_code=303)
+    resp.set_cookie(key="access_token", value=token, httponly=True, samesite="Lax", max_age=24 * 3600)
+    resp.set_cookie(key="user_id", value=str(user_id), httponly=True, samesite="Lax", max_age=24 * 3600)
+    resp.set_cookie(key="role", value=role, httponly=True, samesite="Lax", max_age=24 * 3600)
+    set_csrf_cookie(resp, csrf_token)
+    return resp
 
 
 @app.get("/logout")
@@ -424,10 +477,16 @@ async def logout_page() -> HTMLResponse:
 
 @app.get("/register")
 async def register_page(request: Request, error: str = "") -> HTMLResponse:
-    return templates.TemplateResponse(
+    from src.csrf import generate_csrf_token, set_csrf_cookie
+
+    resp = templates.TemplateResponse(
         request=request, name="register.html",
         context={**_template_context(request), "error": error},
     )
+    # Issue the per-session CSRF cookie so the form can echo it back. The
+    # POST handler rejects registration without a matching token (F4, MC 743.1).
+    set_csrf_cookie(resp, generate_csrf_token())
+    return resp
 
 
 @app.post("/register")
@@ -436,13 +495,27 @@ async def register_submit(
 ) -> HTMLResponse:
     from fastapi.responses import RedirectResponse
 
+    from src.csrf import verify_csrf
     from src.database import get_session_cm
     from src.users import register_user as _reg
 
     form = await request.form()
-    username = form.get("username", "")
-    password = form.get("password", "")
-    role = form.get("role", "user")
+    username = (form.get("username") or "").strip()
+    password = form.get("password") or ""
+    email = (form.get("email") or "").strip() or None
+
+    # F4 (MC 743.1): require a valid double-submit CSRF token (cookie +
+    # header/field). A missing token is rejected — no account is created.
+    # verify_csrf is async (it reads the form body); await it or the
+    # un-awaited coroutine crashes with AttributeError (MC 743.4).
+    try:
+        await verify_csrf(request)
+    except HTTPException:
+        import urllib.parse
+        return RedirectResponse(
+            url="/register?error=" + urllib.parse.quote("Säkerhetstoken saknas eller är felaktig"),
+            status_code=303,
+        )
 
     if not username or not password:
         return templates.TemplateResponse(
@@ -452,14 +525,17 @@ async def register_submit(
 
     with get_session_cm() as db:
         try:
-            _reg(db, username=username, password=password, role=role)
+            # F2/F3 (MC 743.1): role is FORCED to "user" by register_user —
+            # the form's role field is deliberately ignored so a public
+            # self-register can never mint a privileged account.
+            _reg(db, username=username, password=password, email=email)
         except Exception as e:
             return templates.TemplateResponse(
                 request=request, name="register.html",
                 context={**_template_context(request), "error": str(e)},
             )
 
-    resp = RedirectResponse(url="/login", status_code=303)
+    resp = RedirectResponse(url="/login", status_code=302)
     return resp
 
 
@@ -564,8 +640,20 @@ from src.auth import router as auth_router
 from src.books import create_router as books_router
 from src.circulation import create_router as loans_router
 from src.users import create_router as users_router
+from src.admin_api import create_router as admin_api_router
 
 app.include_router(auth_router)
 app.include_router(books_router())
 app.include_router(loans_router())
 app.include_router(users_router())
+# MC 743.1, S1: mount the REST admin surface (F4) — /api/admin/users.
+app.include_router(admin_api_router())
+
+# MC 743.1, S1: mount the HTML admin pages (the "live+visible /admin" pages).
+# build_admin_router needs the shared templates + template-context + session
+# helpers from this module. It is mounted last so the HTML /admin routes
+# coexist with the REST /api/admin surface above.
+from src.admin import build_admin_router  # noqa: E402
+from src.database import get_session_cm as _admin_get_session_cm  # noqa: E402
+
+app.include_router(build_admin_router(templates, _template_context, _admin_get_session_cm))

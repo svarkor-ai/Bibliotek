@@ -1,0 +1,37 @@
+{#- MC 361.1 (M2) — admin_base.html : shared admin shell for /admin pages.
+    Per bernie's REV2 design (216.2-rev2) §2 module "admin-base":
+    extends base.html, admin sub-nav (Översikt / Låntagare / Personal),
+    content/extra_css/extra_js blocks, admin css/js. No data rendering here.
+    Child templates (admin_dashboard.html, admin_lantagare.html, admin_personal.html)
+    extend THIS file and fill the `admin_content` block; each sets `{% set active_tab %}`.
+-#}
+{% extends "base.html" %}
+
+{% block title %}{% block admin_title %}Administration — Bibliotek{% endblock %}{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="/static/css/admin.css">
+{% endblock %}
+
+{% block content %}
+<div class="admin-shell">
+  <header class="admin-header">
+    <h1 class="admin-heading">Administration</h1>
+    <nav class="admin-subnav" aria-label="Administration">
+      <ul>
+        <li><a href="/admin"{% if active_tab|default('') == 'overview' %} class="is-active" aria-current="page"{% endif %}>Översikt</a></li>
+        <li><a href="/admin/lantagare"{% if active_tab|default('') == 'lantagare' %} class="is-active" aria-current="page"{% endif %}>Låntagare</a></li>
+        <li><a href="/admin/personal"{% if active_tab|default('') == 'personal' %} class="is-active" aria-current="page"{% endif %}>Personal</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main class="admin-content">
+    {% block admin_content %}{% endblock %}
+  </main>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+  <script src="/static/js/admin.js"></script>
+{% endblock %}
