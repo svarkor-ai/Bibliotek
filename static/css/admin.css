@@ -1,0 +1,180 @@
+/* MC 743.10 (I4) — admin.css: shell / sub-nav / table styling for the
+   /admin pages (admin_base.html + admin_dashboard/lantagare/personal).
+   This file previously did not exist; the templates referenced it, so the
+   pages 404'd on the stylesheet. It is a minimal, self-contained stylesheet
+   built on the same :root design tokens as static/css/style.css so the admin
+   shell renders coherently. It styles the shell only — data tiles and rows
+   keep their inline presentation (see the templates' comments). */
+
+/* Re-declare the design tokens so this file is self-sufficient even when
+   loaded without style.css (style.css :root already sets these site-wide, so
+   the values match and nothing changes for the public pages). */
+:root {
+  --clr-primary: #1f4e79;
+  --clr-surface: #ffffff;
+  --clr-text: #1a1a1a;
+  --clr-text-muted: #6b7280;
+  --clr-border: #d1d5db;
+  --radius: 8px;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --font-serif: Georgia, "Times New Roman", serif;
+}
+
+/* ---- Admin shell --------------------------------------------------------- */
+.admin-shell {
+  display: block;
+  padding-bottom: 2.5rem;
+}
+
+/* Sub-navigation tabs (the three admin modules). */
+.admin-subnav {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 1.25rem 0 1.5rem;
+  border-bottom: 1px solid var(--clr-border);
+  padding-bottom: 0.5rem;
+}
+
+.admin-subnav a {
+  display: inline-block;
+  padding: 0.4rem 0.9rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--clr-border);
+  background: var(--clr-surface);
+  color: var(--clr-text);
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+.admin-subnav a:hover {
+  background: #f3f4f6;
+}
+
+.admin-subnav a.is-active {
+  background: var(--clr-primary);
+  border-color: var(--clr-primary);
+  color: #ffffff;
+}
+
+/* ---- Intro + stat tiles -------------------------------------------------- */
+.admin-intro {
+  max-width: 60ch;
+  line-height: 1.5;
+}
+
+.admin-stat-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Tables (lantagare / personal) --------------------------------------- */
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.admin-table th,
+.admin-table td {
+  text-align: left;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--clr-border);
+  vertical-align: middle;
+}
+
+.admin-table thead th {
+  background: #f9fafb;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--clr-text-muted);
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table tbody tr:hover {
+  background: #fafafa;
+}
+
+/* ---- Forms inside the admin pages ---------------------------------------- */
+.admin-form {
+  max-width: 30rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-form label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.admin-form input,
+.admin-form select {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+.admin-form .admin-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.admin-form button[type="submit"] {
+  background: var(--clr-primary);
+  color: #ffffff;
+  border: 1px solid var(--clr-primary);
+  border-radius: var(--radius);
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+
+.admin-form button[type="submit"]:hover {
+  filter: brightness(1.08);
+}
+
+.admin-form button[type="button"] {
+  background: var(--clr-surface);
+  color: var(--clr-text);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius);
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+
+/* ---- Messages ------------------------------------------------------------- */
+.admin-message {
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+  border: 1px solid var(--clr-border);
+}
+
+.admin-message.error {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+.admin-message.success {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+}
+
+/* ---- Empty state ---------------------------------------------------------- */
+.admin-empty {
+  text-align: center;
+}

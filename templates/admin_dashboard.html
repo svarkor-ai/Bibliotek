@@ -1,0 +1,46 @@
+{#- MC 361.2 (M3) — admin_dashboard.html : admin overview, read-only.
+    Per bernie's REV2 design (216.2-rev2-admin-user-mgmt-design-20260821T1507.md)
+    §2 module "admin-dashboard" + contract C5' (revised for F1):
+      - renders user_count, overdue_count, current_user from the /admin route context (C2');
+        NO browser fetch, NO JS required (C5' "No JS required to render").
+      - tile label "Antal försenade lån" (overdue), NOT "aktivt lån".
+      - links to Låntagare / Personal.
+      - depends_on: [admin-base] only.
+    Extends admin_base.html (M2, sibling card 361.1) and sets active_tab = 'overview'.
+    Tile presentation: inline styles against style.css :root tokens because 361.4's
+    admin.css covers shell/subnav/tables — not stat tiles. Keeping class names so the
+    shared admin.css can later style them; inline keeps this view coherent standalone.
+-#}
+{% extends "admin_base.html" %}
+{% block admin_title %}Översikt — Administration — Bibliotek{% endblock %}
+
+{% set active_tab = 'overview' %}
+
+{% block admin_content %}
+<p class="admin-intro" style="margin:.5rem 0 1.25rem;color:var(--clr-text-muted)">Översikt över bibliotekets
+användare och aktuella lån. Härifrån når du administreringen av
+<a href="/admin/lantagare">låntagare</a> och <a href="/admin/personal">personal</a>.</p>
+
+<div class="admin-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem">
+  <a class="admin-stat" href="/admin/lantagare"
+     style="display:block;background:var(--clr-surface);border:1px solid var(--clr-border);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:1.25rem 1.5rem;text-decoration:none;color:var(--clr-text)">
+    <span class="admin-stat-value" style="display:block;font-family:var(--font-serif);font-size:2rem;font-weight:600;color:var(--clr-primary);line-height:1.2">{{ user_count }}</span>
+    <span class="admin-stat-label" style="display:block;font-weight:600;margin-top:.25rem">Låntagare</span>
+    <span class="admin-stat-hint" style="display:block;font-size:.85rem;color:var(--clr-text-muted);margin-top:.25rem">Hantera låntagarkonton</span>
+  </a>
+
+  <a class="admin-stat" href="/admin/personal"
+     style="display:block;background:var(--clr-surface);border:1px solid var(--clr-border);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:1.25rem 1.5rem;text-decoration:none;color:var(--clr-text)">
+    <span class="admin-stat-value" style="display:block;font-family:var(--font-serif);font-size:2rem;font-weight:600;color:var(--clr-primary);line-height:1.2">{{ overdue_count }}</span>
+    <span class="admin-stat-label" style="display:block;font-weight:600;margin-top:.25rem">Antal försenade lån</span>
+    <span class="admin-stat-hint" style="display:block;font-size:.85rem;color:var(--clr-text-muted);margin-top:.25rem">Hantera personal</span>
+  </a>
+</div>
+
+{% if not user_count and not overdue_count %}
+<div class="admin-empty" style="margin-top:1.5rem;text-align:center;padding:2rem 1rem;border:1px dashed var(--clr-border);border-radius:var(--radius);color:var(--clr-text-muted)">
+  <div class="empty-icon" style="font-size:2rem;margin-bottom:.5rem">📭</div>
+  <p style="margin:0">Ingen data ännu. Kontona och lånen visas här när de finns.</p>
+</div>
+{% endif %}
+{% endblock %}

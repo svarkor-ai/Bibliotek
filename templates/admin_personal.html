@@ -1,0 +1,147 @@
+{#- MC 361.6 (M5) — admin_personal.html : staff account management view.
+    Per bernie's REV2 design (216.2-rev2) §2 module "personal-module":
+    extends admin_base.html (M2), sets active_tab='personal', fills admin_content.
+    Admin-only, server-side: admin lists librarian+admin staff, creates staff via
+    register_user (C11), promotes/demotes and edits contact via update_user (C12).
+    No client-side fetch, no JS auth (design I3/I4); forms are native POST so they
+    work without admin.js (M6, sibling card). Data injected by route (M1, C10):
+    `staff` rows {id,username,email,role,created_at}, `current_user`, optional
+    `error`/`success` context strings for 4xx flashes.
+-#}
+{% extends "admin_base.html" %}
+{% set active_tab = 'personal' %}
+
+{% block admin_title %}Personal — Administration{% endblock %}
+
+{% block admin_content %}
+  <div class="admin-toolbar">
+    <h2 class="admin-panel-title">Personal</h2>
+      <button type="button" class="btn btn-primary btn-sm" id="openCreateStaff"
+              aria-haspopup="dialog" aria-expanded="false"
+              onclick="adminToggleCreatePanel(this)">+ Lägg till personal</button>
+  </div>
+
+  {% if error %}
+  <div class="alert alert-error" role="alert">
+    <strong>Kunde inte spara:</strong> {{ error }}
+  </div>
+  {% endif %}
+  {% if success %}
+  <div class="alert alert-success" role="status">
+    {{ success }}
+  </div>
+  {% endif %}
+
+  {#- Create-staff panel (native POST — works without JS; admin.js M6 enhances) #}
+  <section class="panel create-staff-panel" id="createStaffPanel" aria-labelledby="createStaffTitle" hidden>
+    <h3 id="createStaffTitle">Lägg till personal</h3>
+    <form method="post" action="/admin/personal" class="create-staff-form">
+      <div class="form-group">
+        <label for="staffUsername">Användarnamn</label>
+        <input type="text" id="staffUsername" name="username" required
+               autocomplete="off" minlength="3" placeholder="Användarnamn">
+      </div>
+      <div class="form-group">
+        <label for="staffPassword">Lösenord</label>
+        <input type="password" id="staffPassword" name="password" required
+               minlength="8" autocomplete="new-password" placeholder="Minst 8 tecken">
+      </div>
+      <div class="form-group">
+        <label for="staffEmail">E-post</label>
+        <input type="email" id="staffEmail" name="email"
+               value="{{ current_user.email if current_user and current_user.email else '' }}"
+               placeholder="namn@exempel.se">
+      </div>
+      <div class="form-group">
+        <label for="staffRole">Roll</label>
+        <select id="staffRole" name="role" required>
+          <option value="">— Välj roll —</option>
+          <option value="librarian">Bibliotekarie</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Skapa personal</button>
+        <button type="button" class="btn btn-secondary"
+                onclick="adminToggleCreatePanel(this)">Avbryt</button>
+      </div>
+    </form>
+  </section>
+
+  {#- Staff table: only librarian + admin roles are ever listed (C10). #}
+  <section class="panel" aria-labelledby="staffListTitle">
+    <h3 id="staffListTitle">Befintlig personal</h3>
+    {% set staff_rows = staff | selectattr('role', 'ne', 'user') | list if staff else [] %}
+    {% if staff_rows %}
+    <div class="table-scroll">
+      <table class="user-table">
+        <thead>
+          <tr>
+            <th scope="col">Användarnamn</th>
+            <th scope="col">E-post</th>
+            <th scope="col">Roll</th>
+            <th scope="col">Skapad</th>
+            <th scope="col">Åtgärder</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for person in staff_rows %}
+          <tr>
+            <td data-label="Användarnamn">{{ person.username }}</td>
+            <td data-label="E-post">{{ person.email or '—' }}</td>
+            <td data-label="Roll">
+              {% if person.role == 'admin' %}
+              <span class="badge badge-admin">Admin</span>
+              {% else %}
+              <span class="badge badge-librarian">Bibliotekarie</span>
+              {% endif %}
+            </td>
+            <td data-label="Skapad">{{ person.created_at }}</td>
+            <td data-label="Åtgärder">
+              <form method="post" action="/admin/personal/{{ person.id }}"
+                    class="row-edit-form" onsubmit="return adminConfirmEdit()">
+                <input type="hidden" name="user_id" value="{{ person.id }}">
+                <label class="sr-only" for="email-{{ person.id }}">E-post för {{ person.username }}</label>
+                <input type="email" id="email-{{ person.id }}" name="email"
+                       class="input-inline" value="{{ person.email or '' }}"
+                       placeholder="E-post">
+                <label class="sr-only" for="role-{{ person.id }}">Roll för {{ person.username }}</label>
+                <select id="role-{{ person.id }}" name="role" class="input-inline">
+                  <option value="librarian" {% if person.role == 'librarian' %}selected{% endif %}>Bibliotekarie</option>
+                  <option value="admin"     {% if person.role == 'admin' %}selected{% endif %}>Admin</option>
+                </select>
+                <button type="submit" class="btn btn-secondary btn-sm">Spara</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-icon">👤</div>
+      <p>Ingen personal finns ännu. Lägg till ett konto med formuläret ovan.</p>
+    </div>
+    {% endif %}
+  </section>
+{% endblock %}
+
+{% block extra_js %}
+  {{ super() }}
+  <script>
+    {#- Progressive enhancement only. If admin.js (M6) isn't present yet, these
+        inlined fallbacks keep the create panel and edit confirmations usable.
+        No data fetching, no auth handling, no Authorization header (I4/C13). #}
+    function adminToggleCreatePanel(btn) {
+      var panel = document.getElementById('createStaffPanel');
+      if (!panel) return;
+      var open = panel.hasAttribute('hidden');
+      panel.toggleAttribute('hidden');
+      if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    function adminConfirmEdit() {
+      return window.confirm('Spara ändringar för denna användare?');
+    }
+  </script>
+{% endblock %}

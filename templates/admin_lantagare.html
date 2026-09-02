@@ -1,0 +1,102 @@
+{#- MC 361.5 (T5) — templates/admin_lantagare.html : borrower (låntagare) module.
+    Per bernie's REV2 design (216.2-rev2) M4 lantagare-module, contracts C6/C7/C8,
+    dependency [admin-base]:
+      - extends admin_base.html (sets active_tab='lantagare' -> sub-nav marks is-active)
+      - server-side render of `rows` passed by the /admin/lantagare route (M1, sibling)
+      - per-row edit form posts to POST /admin/lantagare/{user_id} (C8, 303->GET)
+      - role stays "user": NO role field on the borrower row (plan §6 recommendation A
+        — role promotion/demotion lives only in the personal module)
+    DATA CONTRACT this template expects from the route (matches design §4):
+      rows:[{id, username, email, created_at, active_loans}]   (C7)
+      error?  (flash on 4xx, C8)   success?  (post-edit confirmation, optional)
+      current_user, csrf_token     (site-wide, from base.html/_template_context)
+    No /api browser traffic, no Authorization header (I4/I5). No data editing of
+    src/users.py / src/circulation.py (I1) — only update_user via the route.
+-#}
+{% extends "admin_base.html" %}
+{% set active_tab = 'lantagare' %}
+
+{% block admin_title %}Låntagare — Administration{% endblock %}
+
+{% block admin_content %}
+<section class="admin-section" aria-labelledby="lantagare-heading">
+  <header class="admin-section-header">
+    <h2 id="lantagare-heading" class="admin-heading">Låntagare</h2>
+    <p class="admin-subtitle">Hantera låntagarnas kontaktuppgifter. Rollen ändras under Personal.</p>
+  </header>
+
+  {#- Mutation result / error flash (C8) — both optional, from route context. #}
+  {% if success|default(false) %}
+  <div class="admin-flash admin-flash-success" role="status">
+    <span aria-hidden="true">✓</span> {{ success }}
+  </div>
+  {% endif %}
+
+  {% if error|default(false) %}
+  <div class="admin-flash admin-flash-error" role="alert">
+    <span aria-hidden="true">✕</span> {{ error }}
+  </div>
+  {% endif %}
+
+  {% if rows %}
+  <div class="card" style="padding:0;overflow-x:auto;">
+    <table class="user-table admin-table">
+      <thead>
+        <tr>
+          <th scope="col">Användarnamn</th>
+          <th scope="col">E-post</th>
+          <th scope="col">Skapad</th>
+          <th scope="col">Aktiva lån</th>
+          <th scope="col"><span class="sr-only">Redigera</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in rows %}
+        <tr class="admin-row">
+          <td data-label="Användarnamn"><strong>{{ u.username }}</strong></td>
+          <td data-label="E-post">{{ u.email or '—' }}</td>
+          <td data-label="Skapad">{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '—' }}</td>
+          <td data-label="Aktiva lån">
+            {% if u.active_loans and u.active_loans > 0 %}
+            <span class="badge badge-checked">{{ u.active_loans }} st</span>
+            {% else %}
+            <span class="badge badge-available">Inga</span>
+            {% endif %}
+          </td>
+          <td data-label="Redigera" class="admin-actions">
+            {#- Edit posts to the M1 route POST /admin/lantagare/{user_id} (303 -> GET).
+                Role is intentionally absent: borrowers cannot be promoted here (design M4). #}
+            <form method="post" action="/admin/lantagare/{{ u.id }}" class="admin-edit-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="form-group" style="margin-bottom:0">
+                <label for="edit-username-{{ u.id }}" class="sr-only">Användarnamn</label>
+                <input type="text" id="edit-username-{{ u.id }}" name="username"
+                       value="{{ u.username }}" required minlength="3" maxlength="50"
+                       autocomplete="username">
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label for="edit-email-{{ u.id }}" class="sr-only">E-post</label>
+                <input type="email" id="edit-email-{{ u.id }}" name="email"
+                       value="{{ u.email or '' }}" autocomplete="email">
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label for="edit-password-{{ u.id }}" class="sr-only">Nytt lösenord (valfritt)</label>
+                <input type="password" id="edit-password-{{ u.id }}" name="new_password"
+                       placeholder="Nytt lösenord (valfritt)" autocomplete="new-password">
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm">Spara</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state" role="status">
+    <div class="empty-icon" aria-hidden="true">👤</div>
+    <p>Inga låntagare ännu. Nya konton med rollen <em>användare</em> visas här.</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
