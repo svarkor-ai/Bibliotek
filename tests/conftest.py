@@ -12,11 +12,36 @@ from sqlalchemy.orm import Session as SA_Session
 
 TEST_DB_PATH = Path(tempfile.mkdtemp()) / "bibliotek_test.db"
 
+# MC 743.13 F1: src.config hard-requires SECRET_KEY and JWT_EXPIRE_HOURS at
+# IMPORT time (no default fallback since the 743.1 F1 fix), so the values must
+# be present BEFORE any test module imports src.config. Setting them at conftest
+# import time (top level, not in a fixture) means collection cannot fail with
+# a bare RuntimeError. These are non-secret test values that never leave this
+# test process; production sets real values via the environment.
+os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
+os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production-use-0123456789")
+os.environ.setdefault("JWT_EXPIRE_HOURS", "24")
+os.environ["ENABLE_DEMO_WRITE_GUARD"] = "false"
+
 
 @pytest.fixture(autouse=True, scope="session")
 def _clear_env():
-    """Ensure DATABASE_URL points to our temp file."""
+    """Ensure DATABASE_URL points to our temp file and the hard-required
+    F1 env vars (SECRET_KEY, JWT_EXPIRE_HOURS) are present.
+
+    After MC 743.1 F1 there is no default secret: importing src.config with
+    SECRET_KEY/JWT_EXPIRE_HOURS unset raises. We set a non-secret test value
+    here so the app can be imported and exercised in tests. The value is NOT
+    a production secret and never leaves this test process.
+    """
     os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
+    os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production-use-0123456789")
+    os.environ.setdefault("JWT_EXPIRE_HOURS", "24")
+    # Opt the demo per-visitor write-rate limiter OUT of the test run. The
+    # 10/300s bucket (MC 2034.2) is keyed per source IP and every test shares
+    # one TestClient IP, so ~10 mutating calls mid-run would get a 429 and make
+    # the otherwise-deterministic suite flaky (MC 743.1). Production keeps it ON.
+    os.environ["ENABLE_DEMO_WRITE_GUARD"] = "false"
     yield
     try:
         TEST_DB_PATH.unlink()
@@ -39,11 +64,20 @@ def _create_test_tables(engine):
 
 
 def _seed_users(session: SA_Session):
-    """Create admin, librarian, and regular user."""
-    from src.users import register_user
-    register_user(session, "admin", "admin", role="admin")
-    register_user(session, "librarian", "librarian", role="librarian")
-    register_user(session, "testuser", "password123", role="user")
+    """Create admin, librarian, and regular user.
+
+    Privileged roles are granted DIRECTLY in the test DB here (via
+    ``update_user``) because the public register path now forces role="user"
+    (MC 743.1, F2/F3). This mirrors a realistic out-of-band admin bootstrap.
+    """
+    from src.users import register_user, update_user
+
+    a = register_user(session, "admin", "admin")
+    update_user(session, a.id, role="admin")
+    l = register_user(session, "librarian", "librarian")
+    update_user(session, l.id, role="librarian")
+    register_user(session, "testuser", "password123")
+    session.commit()
 
 
 @pytest.fixture()

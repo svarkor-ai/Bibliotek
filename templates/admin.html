@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/style.css">
+  <meta name="csrf-token" content="{{ csrf_token }}">
 </head>
 <body>
 <div class="demo-banner" style="background:#7a1f1f;color:#fff;padding:9px 14px;text-align:center;font:600 15px/1.4 system-ui,-apple-system,sans-serif;letter-spacing:.01em">DEMO — påhittad data. Ange inga riktiga personuppgifter.</div>
@@ -27,6 +28,9 @@
           {% if user %}
           <li><a href="/books">Böcker</a></li>
           <li><a href="/loans">Mina lån</a></li>
+          {% if user.role == 'admin' %}
+          <li><a href="/admin">Administration</a></li>
+          {% endif %}
           <li>
             <span class="user-badge">
               <span>{{ user.username }}</span>
@@ -141,115 +145,26 @@
     </footer>
   </div>
 
+  <script src="/static/js/admin.js"></script>
   <script>
+    /* Page-local helpers and the non-admin guard. All dashboard logic
+     * lives in /static/js/admin.js (loaded above). */
     function toggleMenu() {
       document.getElementById('navLinks').classList.toggle('open');
     }
 
-    if (!isLoggedIn()) {
+    if (window.isLoggedIn && !window.isLoggedIn()) {
       window.location.href = '/login';
     }
 
-    if (!isAdmin()) {
-      toast('Endast administratörer kan se denna sida.', 'error');
-      setTimeout(() => {
-        window.location.href = '/books';
-      }, 2000);
+    if (window.isAdmin && !window.isAdmin()) {
+      window.toast('Endast administratörer kan se denna sida.', 'error');
+      setTimeout(function () { window.location.href = '/books'; }, 2000);
     }
 
-    /* --- Load system stats --- */
-    async function loadStats() {
-      try {
-        const books = await api('/api/books?limit=1');
-        document.getElementById('statBooks').textContent = books.total || 0;
-      } catch (err) {
-        document.getElementById('statBooks').textContent = '—';
-      }
-
-      try {
-        const loans = await api('/api/loans/active');
-        document.getElementById('statActiveLoans').textContent = loans.length;
-      } catch (err) {
-        document.getElementById('statActiveLoans').textContent = '—';
-      }
-
-      try {
-        const overdue = await api('/api/loans/overdue');
-        document.getElementById('statOverdue').textContent = overdue.length;
-      } catch (err) {
-        document.getElementById('statOverdue').textContent = '—';
-      }
-
-      /* User count — approximate from loans endpoint */
-      document.getElementById('statUsers').textContent = '—';
-    }
-
-    /* --- Load users --- */
-    async function loadUsers() {
-      const tbody = document.getElementById('userTableBody');
-      const loading = document.getElementById('userLoading');
-      const empty = document.getElementById('userEmpty');
-
-      loading.style.display = 'block';
-      tbody.innerHTML = '';
-      empty.style.display = 'none';
-
-      /* Note: User listing endpoint needs to be implemented in backend.
-         This gracefully degrades if /api/users is not yet available. */
-      try {
-        /* Attempt to load users via a GET endpoint on /api/users */
-        const users = await api('/api/users');
-        if (users.length === 0) {
-          empty.style.display = 'block';
-          loading.style.display = 'none';
-          return;
-        }
-
-        users.forEach(u => {
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${escapeHtml(u.username)}</td>
-            <td>${escapeHtml(u.email || '—')}</td>
-            <td><span class="badge badge-available">${escapeHtml(u.role || 'user')}</span></td>
-            <td>${formatDate(u.created_at)}</td>
-          `;
-          tbody.appendChild(tr);
-        });
-
-        loading.style.display = 'none';
-      } catch (err) {
-        /* User listing not yet implemented — show current user info */
-        loading.style.display = 'none';
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${escapeHtml(APP.user.username)}</td>
-          <td>${escapeHtml(APP.user.email || '—')}</td>
-          <td><span class="badge badge-available">${escapeHtml(APP.user.role)}</span></td>
-          <td>—</td>
-        `;
-        tbody.appendChild(tr);
-
-        const infoRow = document.createElement('tr');
-        infoRow.innerHTML = `<td colspan="4"><p class="card-subtitle" style="padding:.5rem;">Användarhantering: /api/users måste implementeras för att visa alla användare.</p></td>`;
-        tbody.appendChild(infoRow);
-      }
-    }
-
-    /* --- Load everything --- */
-    loadStats();
-    loadUsers();
-
-    /* --- Logout --- */
     function handleLogout() {
-      clearAuth();
+      window.clearAuth && window.clearAuth();
       window.location.href = '/';
-    }
-
-    function escapeHtml(str) {
-      if (!str) return '';
-      const div = document.createElement('div');
-      div.textContent = str;
-      return div.innerHTML;
     }
   </script>
 </body>

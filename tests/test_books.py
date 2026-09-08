@@ -56,7 +56,7 @@ class TestCreateBook:
     def test_book_created_by_user(self, session):
         # Create a user first
         from src.users import register_user
-        register_user(session, "booker", "pass123", role="user")
+        register_user(session, "booker", "pass123")
         book = create_book(session, isbn="cb1", title="Created by user", user_id=1)
         assert book.created_by == 1
 

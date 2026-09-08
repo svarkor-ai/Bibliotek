@@ -25,6 +25,9 @@
         <li><a href="/catalog">Katalog</a></li>
         {% if current_user %}
         <li><a href="/loans" id="nav-loans">Mina lån</a></li>
+        {% if current_user.role == 'admin' %}
+        <li><a href="/admin">Administration</a></li>
+        {% endif %}
         <li>
           <span class="user-badge">
             {% if current_user.role == 'admin' %}

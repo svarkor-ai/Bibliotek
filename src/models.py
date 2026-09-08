@@ -19,7 +19,7 @@ class Base(DeclarativeBase):
 # Enums (Python-level, mapped as VARCHAR in SQLite)
 # ---------------------------------------------------------------------------
 
-VALID_ROLES: tuple[str, ...] = ("admin", "librarian", "user")
+VALID_ROLES: tuple[str, ...] = ("admin", "librarian", "staff", "user")
 VALID_HCF_CATEGORIES: tuple[str, ...] = ("hcf", "hcg", "hcb", "adult")
 
 

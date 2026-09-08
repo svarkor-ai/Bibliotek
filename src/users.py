@@ -1,7 +1,7 @@
 """User CRUD + FastAPI router for Bibliotek.
 
 Functions
-    register_user(db, username, password, role, email) -> User
+    register_user(db, username, password, email) -> User   (role always "user")
     get_user(db, user_id) -> User or 404
     list_users(db, role_filter) -> list[User]
     update_user(db, user_id, **kwargs) -> User
@@ -31,10 +31,13 @@ def register_user(
     db: Session,
     username: str,
     password: str,
-    role: str = "user",
     email: str | None = None,
 ) -> User:
     """Persist a new user with a bcrypt-hashed password.
+
+    The role is ALWAYS ``"user"``. There is deliberately no ``role`` parameter:
+    callers (API registration, web form) can never create a privileged account,
+    which closes the register-path privilege-escalation hole (MC 743.1, F2/F3).
 
     Parameters
     ----------
@@ -44,27 +47,19 @@ def register_user(
         Unique username (max 50 chars).
     password:
         Plain-text password (hashed with bcrypt before storage).
-    role:
-        One of ``admin``, ``librarian``, or ``user`` (default ``user``).
     email:
         Optional email address.
 
     Returns
     -------
     User
-        The newly created ORM User instance.
+        The newly created ORM User instance (role always ``"user"``).
 
     Raises
     ------
-    HTTPException(400):
-        If *username* already exists or *role* is invalid.
+    HTTPException(409):
+        If *username* already exists.
     """
-    if role not in VALID_ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid role {role!r}. Must be one of {VALID_ROLES}",
-        )
-
     existing = (
         db.query(User)
         .filter(User.username == username)
@@ -79,7 +74,7 @@ def register_user(
     user = User(
         username=username,
         password_hash=hash_password(password),
-        role=role,
+        role="user",  # forced — never taken from caller input (F2/F3)
         email=email,
     )
     db.add(user)
@@ -219,8 +214,15 @@ def create_router() -> APIRouter:
         body: RegisterRequest,
         db: Session = Depends(get_session),
     ) -> dict:
-        """Public user registration."""
-        user = register_user(db, body.username, body.password, body.role, body.email)
+        """Public user registration.
+
+        The new account is ALWAYS created with role ``"user"`` — the
+        ``RegisterRequest.role`` field is ignored on purpose so the register
+        endpoint can never mint a privileged account (MC 743.1, F2).
+        """
+        # NOTE: body.role is deliberately NOT passed through — role is forced
+        # to "user" inside register_user() (F2/F3).
+        user = register_user(db, body.username, body.password, body.email)
         return {
             "id": user.id,
             "username": user.username,
@@ -248,6 +250,7 @@ def create_router() -> APIRouter:
                     "role": u.role,
                     "email": u.email,
                     "created_at": u.created_at.isoformat() if u.created_at else None,
+                    "active": True,
                 }
                 for u in users
             ],
@@ -271,6 +274,7 @@ def create_router() -> APIRouter:
             "role": user.role,
             "email": user.email,
             "created_at": user.created_at.isoformat() if user.created_at else None,
+            "active": True,
         }
 
     # ------------------------------------------------------------------

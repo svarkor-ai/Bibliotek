@@ -25,9 +25,13 @@ class TestRegisterUser:
         assert user.email is None
         assert user.password_hash.startswith("$2b$")
 
-    def test_register_with_role(self, session):
-        user = register_user(session, "lib1", "pass123", role="librarian")
-        assert user.role == "librarian"
+    def test_register_forces_user_role(self, session):
+        # MC 743.1 F2/F3: register_user has no role param and always yields
+        # a plain "user". Any role kwarg is rejected outright.
+        user = register_user(session, "lib1", "pass123")
+        assert user.role == "user"
+        with pytest.raises((TypeError, ValueError)):
+            register_user(session, "lib1b", "pass123", role="librarian")
 
     def test_register_with_email(self, session):
         user = register_user(session, "mailuser", "pass123", email="a@b.com")
@@ -41,17 +45,21 @@ class TestRegisterUser:
         assert exc.value.status_code == 409
         assert "already exists" in exc.value.detail
 
-    def test_invalid_role_raises(self, session):
-        from fastapi import HTTPException
-        with pytest.raises(HTTPException) as exc:
+    def test_invalid_role_kwarg_rejected(self, session):
+        # A role kwarg no longer exists; passing one is rejected (TypeError).
+        with pytest.raises((TypeError, ValueError)):
             register_user(session, "baduser", "pass123", role="superadmin")
-        assert exc.value.status_code == 400
-        assert "Invalid role" in exc.value.detail
 
-    def test_valid_roles(self, session):
+    def test_register_ignores_role_kwarg_never_privileged(self, session):
+        # Whatever the old "valid roles" were, the register path can never
+        # create a privileged account (MC 743.1 F2/F3).
         for role in VALID_ROLES:
-            u = register_user(session, f"role_{role}", "pass123", role=role)
-            assert u.role == role
+            try:
+                u = register_user(session, f"role_{role}", "pass123", role=role)
+            except (TypeError, ValueError):
+                u = None
+            if u is not None:
+                assert u.role == "user"
 
 
 # ---------------------------------------------------------------------------
@@ -85,8 +93,11 @@ class TestListUsers:
         assert "listall_b" in usernames
 
     def test_list_filtered(self, session):
-        register_user(session, "listu1", "p", role="user")
-        register_user(session, "listu2", "p", role="librarian")
+        from src.users import register_user as _ru
+        from src.users import update_user as _uu
+        _ru(session, "listu1", "p")
+        l = _ru(session, "listu2", "p")
+        _uu(session, l.id, role="librarian")
         librarians = list_users(session, role_filter="librarian")
         librarian_names = {u.username for u in librarians}
         assert "listu2" in librarian_names
@@ -109,7 +120,7 @@ class TestUpdateUser:
         assert check_password("newpass", user.password_hash)
 
     def test_update_role_valid(self, session):
-        register_user(session, "roleupd", "p", role="user")
+        register_user(session, "roleupd", "p")
         user = update_user(session, 1, role="librarian")
         assert user.role == "librarian"
 
