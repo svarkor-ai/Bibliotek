@@ -487,9 +487,14 @@ def create_router() -> APIRouter:
     def get_book_endpoint(
         book_id: int,
         db: Session = Depends(get_db),
-        current_user: dict = Depends(require_role(["admin", "reader"])),
+        current_user: dict = Depends(require_role(["admin", "librarian", "user"])),
     ) -> dict:
-        """GET /api/books/{id} — single book by primary key."""
+        """GET /api/books/{id} — single book by primary key.
+
+        A-06 (MC 1267): the role list contained "reader", which is not a
+        valid role, so every plain user got 403 here while the list
+        endpoint is public. Plain users may read a book detail.
+        """
         book = get_book(db, book_id)
         return book.to_dict()
 
@@ -497,8 +502,15 @@ def create_router() -> APIRouter:
     async def create_book_endpoint(
         body: BookCreate,
         db: Session = Depends(get_db),
+        current_user: dict = Depends(require_role(["admin", "librarian"])),
     ) -> dict:
-        """POST /api/books — add a new book."""
+        """POST /api/books — add a new book.
+
+        A-05 (MC 1267): this endpoint had no auth dependency at all — any
+        anonymous client could insert catalog rows. Catalog writes are a
+        staff action: admin/librarian Bearer required (matching the app's
+        own model for user/staff management).
+        """
         book = create_book(
             db,
             isbn=body.isbn,
