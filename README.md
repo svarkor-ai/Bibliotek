@@ -8,18 +8,23 @@ Webapplikation för bibliotek med:
 - **Användare, bibliotekarier och admin**
 - **HCF-integration** för svensk bokidentifiering
 
-> **Data:** Den live-driftsatta katalogen (~115k böcker) fylldes via en bulk-import
-> utanför detta repo och kan inte återskapas från en ren klon — en lokal klon startar
-> med en liten demokatalog. Kategorifiltret använder databasens HCF-koder
-> (`hcf`/`hcg`/`hcb`/`adult`).
+> **Data:** Hela katalogen (~115 000 böcker) kan återskapas från en ren klon:
+> `data/bulk_books.jsonl.gz` ingår i repot och bulk-importeras automatiskt
+> (115 360 rader) vid första start mot en tom databas. Kategorifiltret använder
+> databasens HCF-koder (`hcf`/`hcg`/`hcb`/`adult`).
 
 ## Kör lokal
+
+`SECRET_KEY` och `JWT_EXPIRE_HOURS` är hårdkrävade miljövariabler (ingen
+default — starta utan dem och importen av `src.config` misslyckas). Den riktiga
+startpunkten är `server.py`, inte `src/app.py` (som bara definierar appen):
 
 ```bash
 cd ~/svarkor/builds/bibliotek
 uv venv .venv && . .venv/bin/activate
 uv pip install -r requirements.txt
-python src/app.py
+SECRET_KEY="byt-till-en-riktig-hemlighet-16+" JWT_EXPIRE_HOURS=24 \
+    python server.py
 ```
 
 Öppna `http://localhost:8140` i webbläsaren.
@@ -27,5 +32,6 @@ python src/app.py
 ## Test
 
 ```bash
-python -m pytest tests/ -v
+SECRET_KEY="test-secret" JWT_EXPIRE_HOURS=24 ENABLE_DEMO_WRITE_GUARD=false \
+    python -m pytest tests/ -v
 ```
