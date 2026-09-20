@@ -124,7 +124,10 @@ async function checkoutBook(bookId) {
   try {
     const res = await fetch('/api/loans/checkout-cookie', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': window.CSRF_TOKEN || ''
+      },
       credentials: 'include',
       body: JSON.stringify({ book_id: bookId })
     });
