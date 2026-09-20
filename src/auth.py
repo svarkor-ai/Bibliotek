@@ -56,7 +56,13 @@ def create_access_token(user_id: int, role: str) -> str:
 
 
 def verify_token(token: str) -> dict | None:
-    """Decode and verify *token*; return payload dict or None on failure."""
+    """Decode and verify *token*; return payload dict or None on failure.
+
+    A-01 (MC 1267): tokens recorded in the logout denylist are rejected
+    here, so a logged-out session's JWT is invalid for its remaining TTL.
+    """
+    if token in _revoked_tokens:
+        return None
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
         return {
@@ -65,6 +71,20 @@ def verify_token(token: str) -> dict | None:
         }
     except JWTError:
         return None
+
+
+# A-01 (MC 1267): process-local logout denylist. /logout records the
+# presented JWT here so the same token is rejected on every later request
+# (verify_token returns None). In-memory is sufficient for this PoC: the
+# denylist lives exactly as long as the process that issued the tokens,
+# and a restart invalidates all sessions anyway (same SECRET_KEY caveat
+# the PoC already accepts). Entries self-expire with the token TTL.
+_revoked_tokens: set[str] = set()
+
+
+def revoke_token(token: str) -> None:
+    """Record *token* as logged out (A-01, MC 1267)."""
+    _revoked_tokens.add(token)
 
 # ---------------------------------------------------------------------------
 # FastAPI dependency — role gate

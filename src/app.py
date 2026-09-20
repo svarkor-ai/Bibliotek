@@ -31,9 +31,18 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 def _template_context(request: Request) -> dict:
-    """Add current_user to template context."""
+    """Add current_user to template context.
+
+    Also echoes the per-session CSRF cookie into the templates so
+    base.html's ``window.CSRF_TOKEN`` carries a real value — the cookie
+    flows (checkout-cookie / return-cookie) submit it back as the
+    X-CSRF-Token header (A-08/A-09, MC 1267).
+    """
     cu = _get_current_user_from_request(request)
-    return {"current_user": cu}
+    return {
+        "current_user": cu,
+        "csrf_token": request.cookies.get("csrf", ""),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -462,13 +471,30 @@ async def login_submit(
 
 
 @app.get("/logout")
-async def logout_page() -> HTMLResponse:
+async def logout_page(request: Request) -> HTMLResponse:
+    """Log the current session out (A-01, MC 1267).
+
+    The old handler was a no-op: it cleared no cookie and invalidated
+    nothing, so the JWT stayed valid its full TTL. It now (1) revokes the
+    presented JWT in the process-local denylist (src.auth.revoke_token) so
+    every later request with that token is rejected, and (2) expires the
+    session/role/CSRF cookies in the browser.
+    """
     from fastapi.responses import HTMLResponse
-    # We'll handle logout via JS redirect
-    return HTMLResponse(
+
+    from src.auth import revoke_token
+
+    cookie = request.cookies.get("access_token")
+    if cookie:
+        revoke_token(cookie)
+
+    resp = HTMLResponse(
         content="""<script>window.location.href='/';</script>""",
         headers={"Refresh": "0;url=/"},
     )
+    for name in ("access_token", "user_id", "role", "csrf"):
+        resp.delete_cookie(name)
+    return resp
 
 
 # ---------------------------------------------------------------------------
@@ -604,12 +630,17 @@ async def loans_page(
 # Return book by loan ID (GET redirect)
 # ---------------------------------------------------------------------------
 
-@app.get("/api/loans/return/<int:loan_id>")
+@app.get("/api/loans/return/{loan_id}")
 async def return_book_page(
     request: Request,
     loan_id: int,
 ) -> RedirectResponse:
-    """Return a book by loan ID (cookie auth)."""
+    """Return a book by loan ID (cookie auth).
+
+    A-02 (MC 1267): the path was Flask syntax (`<int:loan_id>`) which
+    FastAPI never matches — the route was dead (404). FastAPI syntax
+    `{loan_id}` makes the ownership-checking return path reachable.
+    """
     from src.auth import verify_token
     from src.circulation import return_book as _return_book
     from src.database import get_session_cm

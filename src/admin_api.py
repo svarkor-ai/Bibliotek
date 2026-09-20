@@ -32,7 +32,7 @@ from pydantic import BaseModel
 from src.auth import require_role
 from src.csrf import verify_csrf
 from src.database import get_session
-from src.models import User
+from src.models import Loan, User
 from src.users import list_users, update_user
 
 # FastAPI treats an ``Optional[...] = None`` body parameter as *required*
@@ -128,10 +128,29 @@ def create_router() -> APIRouter:
         db=Depends(get_session),
     ) -> dict:
         """Delete a user. Requires a valid CSRF token (403 without) and an
-        admin Bearer token (401 without)."""
+        admin Bearer token (401 without).
+
+        A-04 (MC 1267): a user with loans used to hit an unhandled
+        IntegrityError (FK enforcement is OFF, so SQLAlchemy's NULL-update
+        of loans.user_id is blocked by NOT NULL) and surfaced as a raw 500.
+        Refuse cleanly instead — the caller gets a 409 and the user row and
+        their loans stay intact.
+        """
         user = db.query(User).filter(User.id == user_id).first()
         if user is None:
             raise HTTPException(status_code=404, detail="User not found")
+        loan_count = (
+            db.query(Loan)
+            .filter(
+                (Loan.user_id == user_id) | (Loan.librarian_id == user_id)
+            )
+            .count()
+        )
+        if loan_count:
+            raise HTTPException(
+                status_code=409,
+                detail="User has active loans and cannot be deleted",
+            )
         db.delete(user)
         db.commit()
         return {"deleted": user_id}

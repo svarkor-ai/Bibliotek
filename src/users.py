@@ -300,10 +300,19 @@ def create_router() -> APIRouter:
             kwargs["username"] = username
         if password is not None:
             kwargs["password"] = password
-        if role is not None:
-            kwargs["role"] = role
         if email is not None:
             kwargs["email"] = email
+
+        # A-03 (MC 1267): role changes are admin-only. A librarian may edit
+        # non-role fields (username/password/email) but must never be able
+        # to promote themselves (or anyone) to admin — separation of duties.
+        if role is not None:
+            if current_user["role"] != "admin":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only an admin may change roles",
+                )
+            kwargs["role"] = role
 
         if not kwargs:
             raise HTTPException(
