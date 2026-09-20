@@ -235,6 +235,12 @@ def create_router() -> APIRouter:
                 detail="book_id, user_id, librarian_id are required",
             )
 
+        # A-07 (MC 1267): object-level authz — a plain user may only charge
+        # the loan to themselves. Admin/librarian keep the explicit choice
+        # (they check out on behalf of a borrower at the desk).
+        if current_user["role"] not in ("admin", "librarian"):
+            user_id = current_user["user_id"]
+
         loan = checkout(db, book_id, user_id, librarian_id)
         return _loan_to_dict(loan)
 
@@ -266,12 +272,15 @@ def create_router() -> APIRouter:
         current_user: Any = Depends(_dep_active),
         db: Session = Depends(get_session),
     ) -> list[dict]:
-        """All active (unreturned) loans with overdue flag."""
-        loans = get_user_loans(db, current_user["user_id"], active_only=True)
-        # For non-librarian users we only show their own active loans;
-        # librarians/admins see all active loans.
-        if current_user["role"] in ("user",):
-            loans = [l for l in loans if l.user_id == current_user["user_id"]]
+        """All active (unreturned) loans with overdue flag.
+
+        N1 (MC 1267): admin/librarian see ALL active loans (per the module
+        docstring + DESIGN.md); plain users see only their own.
+        """
+        if current_user["role"] in ("admin", "librarian"):
+            loans = db.query(Loan).filter(Loan.return_date.is_(None)).all()
+        else:
+            loans = get_user_loans(db, current_user["user_id"], active_only=True)
         return [_loan_to_dict(l) for l in loans]
 
     # ------------------------------------------------------------------
@@ -317,6 +326,11 @@ def create_router() -> APIRouter:
     ) -> dict:
         """Check out a book using cookie auth (prototype-friendly)."""
         from src.auth import verify_token
+        from src.csrf import verify_csrf
+
+        # A-08 (MC 1267): the cookie flow is browser-facing, so it carries
+        # the same double-submit CSRF check as the admin surface.
+        await verify_csrf(request)
 
         body = await request.json()
         book_id = body.get("book_id")
@@ -348,6 +362,12 @@ def create_router() -> APIRouter:
     ) -> dict:
         """Return a book using cookie auth (prototype-friendly)."""
         from src.auth import verify_token
+        from src.csrf import verify_csrf
+
+        # A-09 (MC 1267): CSRF check (same as checkout-cookie) AND an
+        # object-level ownership check — a plain user may only return
+        # their own loan; librarian/admin may return any loan.
+        await verify_csrf(request)
 
         body = await request.json()
         loan_id = body.get("loan_id")
@@ -361,6 +381,22 @@ def create_router() -> APIRouter:
         data = verify_token(cookie)
         if not data:
             raise HTTPException(status_code=401, detail="Invalid token")
+
+        user_id = data.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="No user_id in token")
+
+        loan = db.query(Loan).filter(Loan.id == loan_id).first()
+        if loan is None:
+            raise HTTPException(status_code=404, detail="Loan not found")
+        if (
+            data.get("role") not in ("admin", "librarian")
+            and loan.user_id != user_id
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot return another user's loan",
+            )
 
         loan = return_book(db, loan_id)
         return _loan_to_dict(loan)
